@@ -1,0 +1,45 @@
+---
+- name: Install Microsoft Defender for Endpoint on Linux Servers
+  hosts: all
+  become: yes  # Ensure root privileges for installation tasks
+
+  tasks:
+    - name: Check if Microsoft Defender is already installed
+      ansible.builtin.stat:
+        path: "/usr/bin/mdatp"  # Adjust this path based on where MDE is expected to be installed
+      register: mdatp_installed
+
+    - name: Download Microsoft Defender installation script
+      ansible.builtin.get_url:
+        url: "https://server.domain/downloads/mde_installer.sh"
+        dest: "/tmp/mde_installer.sh"
+        mode: '0755'
+      when: not mdatp_installed.stat.exists  # Only download if MDE is not installed
+
+    - name: Download Microsoft Defender onboarding script
+      ansible.builtin.get_url:
+        url: "https://server.domain/downloads/linux_onboarding_script.py"
+        dest: "/tmp/linux_onboarding_script.py"
+        mode: '0755'
+      when: not mdatp_installed.stat.exists  # Only download if MDE is not installed
+
+    - name: Install and onboard Microsoft Defender
+      ansible.builtin.shell:
+        cmd: "/tmp/mde_installer.sh --install --channel prod --onboard /tmp/linux_onboarding_script.py --min_req -y"
+        executable: /bin/bash
+      register: installation_result
+      when: not mdatp_installed.stat.exists  # Only install if MDE is not installed
+      ignore_errors: true  # Continue on errors to allow for post-install checks
+
+    - name: Verify Microsoft Defender Installation
+      ansible.builtin.command:
+        cmd: "mdatp health"
+      register: mdatp_health
+      failed_when: mdatp_health.rc != 0
+      changed_when: false
+      when: not mdatp_installed.stat.exists  # Only verify if the installation was attempted
+
+    - name: Debug installation and verification
+      ansible.builtin.debug:
+        msg: "Installation output: {{ installation_result.stdout | default('No installation attempt made') }} - Health Check: {{ mdatp_health.stdout | default('No health check performed') }}"
+      when: not mdatp_installed.stat.exists  # Only show debug if the installation was attempted
